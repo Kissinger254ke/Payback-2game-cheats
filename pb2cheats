@@ -1,0 +1,232 @@
+-- SPDX-FileCopyrightText: 2021-2025 ABJ4403
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Pb2Chts FULL FINAL COMBINED BUILD
+
+-- =========================
+-- Core locals & performance
+-- =========================
+local gg, io, os = gg, io, os
+local alert, toast, sleep, isVisible =
+  gg.alert, gg.toast, gg.sleep, gg.isVisible
+
+gg.getFile, gg.getTargetInfo, gg.getLocale =
+  gg.getFile():gsub('%.lua$', ''),
+  gg.getTargetInfo(),
+  gg.getLocale()
+
+-- =========================
+-- Files
+-- =========================
+local susp_file = gg.EXT_CACHE_DIR .. '/Pb2Chts.suspend.json'
+local cfg_file  = gg.EXT_FILES_DIR .. '/Pb2Chts.conf'
+
+-- =========================
+-- Memory regions
+-- =========================
+local tmp, memOzt, t = {}, {}, {}
+local memZones = {
+  RegionXa  = {0xB0000000, 0x7FFFFFFFFFFFFFFF},
+  RegionCbA = {0xB0000000, 0x7FFFFFFFFFFFFFFF}
+}
+
+-- =========================
+-- Config
+-- =========================
+cfg = {
+  mpSafe        = true,
+  lowEnd        = true,
+  autoReanchor  = true,
+  releaseLock  = true,
+  lang          = 'en',
+  memRange      = { CbA = gg.REGION_C_ALLOC }
+}
+
+-- =========================
+-- OFFSETS (centralized)
+-- =========================
+OFF = {
+  Health     = 0x15F0,
+  Respawn    = 0x1740,
+  Armor      = 0xFE4,
+  Burn       = 0x15E4,
+  Jump       = 0x13C8,
+  VehSpeed   = 0x1428,
+  VehJet     = 0x143C,
+  VehNoTire  = 0x13A4
+}
+
+-- =========================
+-- Language
+-- =========================
+LANG = {
+  en = {
+    title   = 'Pb2Chts FINAL',
+    god     = 'God Mode',
+    jump    = 'Super Jump',
+    freeze  = 'Freeze Time',
+    vehicle = 'Vehicle Cheats',
+    presets = 'Presets',
+    exit    = 'Exit'
+  }
+}
+T = LANG[cfg.lang]
+
+-- =========================
+-- Anchor handling
+-- =========================
+function getAnchor()
+  local r = gg.getRangesList('libunity.so')
+  if #r == 0 then
+    alert('libunity.so not found')
+    os.exit()
+  end
+  return r[1].start
+end
+
+local anchor = getAnchor()
+
+-- =========================
+-- Offset verification
+-- =========================
+function verifyOffsets(a)
+  local probe = {
+    {address = a + OFF.Health, flags = gg.TYPE_WORD},
+    {address = a + OFF.Respawn, flags = gg.TYPE_FLOAT}
+  }
+  local r = gg.getValues(probe)
+  if not r or r[1].value == nil then
+    alert('Offsets may be outdated.\nSome cheats may not work.')
+  end
+end
+verifyOffsets(anchor)
+
+-- =========================
+-- Toggle state
+-- =========================
+STATE = {
+  god  = false,
+  jump = false
+}
+
+-- =========================
+-- Cheats
+-- =========================
+function toggleGod()
+  STATE.god = not STATE.god
+  if STATE.god then
+    if cfg.mpSafe then toast('Godmode: Offline recommended') end
+    gg.addListItems({
+      {address=anchor+OFF.Health,  flags=gg.TYPE_WORD,  value=999, freeze=true, name='[Godmode]'},
+      {address=anchor+OFF.Respawn, flags=gg.TYPE_FLOAT, value=0,   freeze=true, name='[Respawn]'},
+      {address=anchor+OFF.Burn,    flags=gg.TYPE_DWORD,value=0,   freeze=true, name='[AntiBurn]'}
+    })
+    toast('God Mode ON')
+  else
+    gg.clearList()
+    toast('God Mode OFF')
+  end
+end
+
+function toggleJump()
+  STATE.jump = not STATE.jump
+  if STATE.jump then
+    gg.addListItems({
+      {address=anchor+OFF.Jump, flags=gg.TYPE_FLOAT, value=8, freeze=true, name='[SuperJump]'}
+    })
+    toast('Super Jump ON')
+  else
+    gg.clearList()
+    toast('Super Jump OFF')
+  end
+end
+
+function freezeTime()
+  gg.setRanges(cfg.memRange.CbA)
+  gg.searchNumber(1, gg.TYPE_FLOAT)
+  local r = gg.getResults(1)
+  gg.clearResults()
+  if #r > 0 then
+    r[1].value = 0
+    r[1].freeze = true
+    r[1].name = '[FreezeTime]'
+    gg.addListItems(r)
+    toast('Time frozen')
+  else
+    toast('Freeze time not found')
+  end
+end
+
+-- =========================
+-- Vehicle cheats
+-- =========================
+function vehicleMenu()
+  local c = gg.choice(
+    {'Speed x2','Jet Mode','No Tire Pop','Back'},
+    nil,'Vehicle Cheats'
+  )
+  if not c or c == 4 then return end
+
+  if c == 1 then
+    gg.addListItems({
+      {address=anchor+OFF.VehSpeed, flags=gg.TYPE_FLOAT, value=2, freeze=true, name='[VehSpeed]'}
+    })
+  elseif c == 2 then
+    gg.addListItems({
+      {address=anchor+OFF.VehJet, flags=gg.TYPE_FLOAT, value=6, freeze=true, name='[VehJet]'}
+    })
+  elseif c == 3 then
+    gg.addListItems({
+      {address=anchor+OFF.VehNoTire, flags=gg.TYPE_FLOAT, value=0, freeze=true, name='[NoTirePop]'}
+    })
+  end
+end
+
+-- =========================
+-- Presets
+-- =========================
+function presetMenu()
+  local c = gg.choice({'Casual','Chaos','Back'},nil,'Presets')
+  if not c or c == 3 then return end
+
+  if c == 1 then
+    toggleGod()
+  elseif c == 2 then
+    toggleGod()
+    toggleJump()
+    vehicleMenu()
+  end
+end
+
+-- =========================
+-- Main menu
+-- =========================
+function MENU()
+  local c = gg.choice({
+    T.god,
+    T.jump,
+    T.freeze,
+    T.vehicle,
+    T.presets,
+    T.exit
+  }, nil, T.title)
+
+  if c == 1 then toggleGod() end
+  if c == 2 then toggleJump() end
+  if c == 3 then freezeTime() end
+  if c == 4 then vehicleMenu() end
+  if c == 5 then presetMenu() end
+  if c == 6 then os.exit() end
+end
+
+-- =========================
+-- Entry loop
+-- =========================
+toast('Pb2Chts FULL FINAL loaded')
+while true do
+  if gg.isVisible(true) then
+    gg.setVisible(false)
+    if cfg.autoReanchor then anchor = getAnchor() end
+    MENU()
+  end
+  sleep(120)
+end
